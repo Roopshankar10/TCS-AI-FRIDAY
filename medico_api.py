@@ -19,9 +19,6 @@ client = httpx.Client(
 
 load_dotenv()
 
-requests.get = lambda *args, **kwargs: requests.api.get(*args, verify=False, **kwargs)
-
-
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 
@@ -122,10 +119,7 @@ def get_drug_rag_object(drug_name: str):
         ]
     }
 
-# result_of_medico = get_drug_rag_object("dolo")
-
-# print(result_of_medico)
-
+testing = get_drug_rag_object('dolo')
 
 
 def chunks_to_documents(drug_rag_object):
@@ -145,50 +139,98 @@ def chunks_to_documents(drug_rag_object):
 
     return docs
 
-def ingest_drug(drug_name):
-    rag_obj = get_drug_rag_object(drug_name)
+t1= chunks_to_documents(testing)
 
-    if not rag_obj["found"] or len(rag_obj["chunks"]) == 0:
-        print("❌ No data found for drug")
+def build_faiss_index(drug_name: str):
+    save_path = f"faiss_db/{drug_name}"
+
+    rag_object = get_drug_rag_object(drug_name)
+
+    if not rag_object["found"]:
+        print(f"No data found for {drug_name}")
         return None
 
-    docs = chunks_to_documents(rag_obj)
+    docs = chunks_to_documents(rag_object)
 
-    print(f"✅ Created {len(docs)} documents")
-
-    db = store_in_faiss(docs, embeddings)
-
-    print("✅ FAISS index created & saved")
-
-    return db
-
-db = ingest_drug("dolo")
-
-
-embeddings = OpenAIEmbeddings(
-    model="azure/genailab-maas-text-embedding-3-large",
-    api_key=os.getenv("OPENAI_API_KEY"),
-    base_url=os.getenv("BASE_URL"),
-    http_client=client
-)
-
-
-
-def store_in_faiss(docs, embeddings, index_path="drug_faiss_index"):
-    db = FAISS.from_documents(docs, embeddings)
-    db.save_local(index_path)
-    return db
-
-def load_faiss(index_path, embeddings):
-    return FAISS.load_local(
-        index_path,
-        embeddings,
-        allow_dangerous_deserialization=True
+    embeddings = OpenAIEmbeddings(
+        model="azure/genailab-maas-text-embedding-3-large",
+        api_key=os.getenv("OPENAI_API_KEY"),
+        base_url=os.getenv("BASE_URL"),
+        http_client=client
     )
 
-results = db.similarity_search("what are warnings", k=3)
+    vectorstore = FAISS.from_documents(docs, embeddings)
 
-for r in results:
-    print("\n---")
-    print(r.page_content)
-    print(r.metadata)
+    vectorstore.save_local(save_path)
+
+    print(f"Vector DB saved at: {save_path}")
+
+    return vectorstore
+
+build_faiss_index("dolo")
+
+# def load_vectorstore(drug_name: str):
+#     embeddings = OpenAIEmbeddings(
+#         model="azure/genailab-maas-text-embedding-3-large",
+#         api_key=os.getenv("OPENAI_API_KEY"),
+#         base_url=os.getenv("BASE_URL"),
+#     )
+
+#     path = f"faiss_db/{drug_name}"
+
+#     vectorstore = FAISS.load_local(
+#         path,
+#         embeddings,
+#         allow_dangerous_deserialization=True
+#     )
+
+#     return vectorstore
+
+# def retrieve_chunks(vectorstore, query: str, k: int = 3):
+#     docs = vectorstore.similarity_search(query, k=k)
+#     return docs
+
+
+# def ask_llm(query: str, docs):
+#     llm = ChatOpenAI(
+#         model="azure_ai/genailab-maas-DeepSeek-V3-0324",
+#         api_key="sk-0qxBx5yz7XnVigOpOVHNCQ",
+#         base_url="https://genailab.tcs.in",
+#         # temperature=0
+#     )
+
+#     context = "\n\n".join(
+#         [f"{d.page_content}" for d in docs]
+#     )
+
+#     prompt = f"""
+# You are a medical assistant.
+
+# Use ONLY the context below to answer the question.
+
+# Context:
+# {context}
+
+# Question:
+# {query}
+
+# Answer clearly and safely:
+# """
+
+#     response = llm.invoke(prompt)
+#     print(response)
+#     return response.content
+
+
+# # # build / load vector DB
+# # vectorstore = build_faiss_index("dolo")
+
+# # # retrieve relevant chunks
+# # docs = retrieve_chunks(vectorstore, "what is dolo used for")
+
+# # # get LLM answer
+# # answer = ask_llm("what is dolo used for", docs)
+
+# # # PRINT LLM RESPONSE
+# # print("\n===== LLM RESPONSE =====\n")
+# # print(answer)
